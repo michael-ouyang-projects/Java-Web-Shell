@@ -7,78 +7,86 @@ import java.nio.file.Paths;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
+@Profile("linux")
 @RestController
 public class LinuxShellController {
 
-    private String currentDirectory = "/home/ubuntu/Microservices-Practice";
+    @Value("${current.directory}")
+    private String currentDirectory;
 
     @RequestMapping(value = "command/**", method = RequestMethod.PATCH)
-    public String command(HttpServletRequest request, @RequestBody String requestBody) throws Exception {
+    public String command(HttpServletRequest request, @RequestBody(required = false) String requestBody) throws Exception {
         String url = request.getRequestURL().toString();
-        String[] inputString = url.split("/command/")[1].split("%20");
-        StringBuilder output = new StringBuilder();
-        if ("cd".equals(inputString[0]) && inputString.length == 2) {
-            if (Paths.get(inputString[1]).isAbsolute()) {
-                currentDirectory = inputString[1];
+        String[] inputCommands = url.split("/command/")[1].split("%20");
+
+        if ("cd".equals(inputCommands[0]) && inputCommands.length == 2) {
+            if (Paths.get(inputCommands[1]).isAbsolute()) {
+                currentDirectory = inputCommands[1];
             } else {
-                currentDirectory = Paths.get(currentDirectory, inputString[1]).toRealPath().toString();
+                currentDirectory = Paths.get(currentDirectory, inputCommands[1]).toRealPath().toString();
             }
-            output.append("url: " + url + "\n");
-            output.append("currentDirectory: " + currentDirectory);
-            return output.toString();
-        } else if ("vim".equals(inputString[0])) {
-            String[] bodyLines = requestBody.split("\n");
-            Process process = Runtime.getRuntime().exec("rm -rf %s " + inputString[1], null, new File(currentDirectory));
+            return String.format("url: %s\ncurrentDirectory: %s", url, currentDirectory);
+
+        } else if ("vim".equals(inputCommands[0]) && inputCommands.length == 2) {
+            Process process = Runtime.getRuntime().exec("rm -rf %s" + inputCommands[1], null, new File(currentDirectory));
             process.waitFor();
-            for (String bodyLine : bodyLines) {
-                if (bodyLine.isBlank()) {
-                    process = Runtime.getRuntime().exec(String.format("cat.>> %s", inputString[1]), null, new File(currentDirectory));
+            for (String requestBodyString : requestBody.split("\n")) {
+                if (requestBodyString.isBlank()) {
+                    process = Runtime.getRuntime().exec(String.format("echo >> %s", inputCommands[1]), null, new File(currentDirectory));
                 } else {
-                    process = Runtime.getRuntime().exec(String.format("cat %s>> %s", bodyLine.trim(), inputString[1]), null, new File(currentDirectory));
+                    process = Runtime.getRuntime().exec(String.format("echo %s >> %s", requestBodyString.trim(), inputCommands[1]), null, new File(currentDirectory));
                 }
                 process.waitFor();
             }
-            process = Runtime.getRuntime().exec("cat %s " + inputString[1], null, new File(currentDirectory));
-            return waitProcessAndGetOutput(process, output);
-        } else if ("curl".equals(inputString[0])) {
-            StringBuilder command = new StringBuilder();
-            for (String data : inputString) {
-                command.append(" " + data);
+            process = Runtime.getRuntime().exec("cat %s" + inputCommands[1], null, new File(currentDirectory));
+            return getProcessOutput(process, new StringBuilder());
+
+        } else if ("curl".equals(inputCommands[0])) {
+            StringBuilder commandBuilder = new StringBuilder();
+            for (String inputCommand : inputCommands) {
+                commandBuilder.append(" " + inputCommand);
             }
             if (!request.getParameterMap().isEmpty()) {
-                command.append("?");
+                commandBuilder.append("?");
                 request.getParameterMap().forEach((key, value) -> {
-                    command.append(String.format("%s=%s&", key, value[0]));
+                    commandBuilder.append(String.format("%s=%s&", key, value[0]));
                 });
             }
-            output.append("url: " + url + "\n");
-            output.append("command: " + command.toString() + "\n\n");
-            Process process = Runtime.getRuntime().exec(command.toString(), null, new File(currentDirectory));
-            return waitProcessAndGetOutput(process, output);
+            String command = commandBuilder.toString().substring(1, commandBuilder.length() - 1);
+            return executeCommandAndGetOutput(url, command);
+
         } else {
-            StringBuilder command = new StringBuilder();
-            for (String data : inputString) {
-                command.append(" " + data);
+            StringBuilder commandBuilder = new StringBuilder();
+            for (String inputCommand : inputCommands) {
+                commandBuilder.append(" " + inputCommand);
             }
-            output.append("url: " + url + "\n");
-            output.append("command: " + command.toString() + "\n\n");
-            Process process = Runtime.getRuntime().exec(command.toString(), null, new File(currentDirectory));
-            return waitProcessAndGetOutput(process, output);
+            String command = commandBuilder.toString().substring(1);
+            return executeCommandAndGetOutput(url, command);
         }
     }
 
-    private String waitProcessAndGetOutput(Process process, StringBuilder output) throws InterruptedException {
+    private String executeCommandAndGetOutput(String url, String command) throws Exception {
+        StringBuilder responseBuilder = new StringBuilder();
+        responseBuilder.append("url: " + url + "\n");
+        responseBuilder.append("command: " + command + "\n\n");
+        Process process = Runtime.getRuntime().exec(command, null, new File(currentDirectory));
+        return getProcessOutput(process, responseBuilder);
+    }
+
+    private String getProcessOutput(Process process, StringBuilder responseBuilder) throws InterruptedException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
         reader.lines().forEach(line -> {
-            output.append(line + "\n");
+            responseBuilder.append(line + "\n");
         });
         process.waitFor();
-        return output.toString();
+        return responseBuilder.toString();
     }
 
 }
