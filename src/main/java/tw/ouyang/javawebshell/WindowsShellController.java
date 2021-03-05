@@ -35,7 +35,8 @@ public class WindowsShellController {
             return String.format("url: %s\ncurrentDirectory: %s", url, currentDirectory);
 
         } else if ("vim".equals(inputCommands[0]) && inputCommands.length == 2) {
-            Process process = Runtime.getRuntime().exec("cmd.exe /c del %s " + inputCommands[1], null, new File(currentDirectory));
+            System.out.println(inputCommands[1]);
+            Process process = Runtime.getRuntime().exec("cmd.exe /c del " + inputCommands[1], null, new File(currentDirectory));
             process.waitFor();
             for (String requestBodyString : requestBody.split("\n")) {
                 if (requestBodyString.isBlank()) {
@@ -45,7 +46,7 @@ public class WindowsShellController {
                 }
                 process.waitFor();
             }
-            process = Runtime.getRuntime().exec("cmd.exe /c type %s " + inputCommands[1], null, new File(currentDirectory));
+            process = Runtime.getRuntime().exec("cmd.exe /c type " + inputCommands[1], null, new File(currentDirectory));
             return getProcessOutput(process, new StringBuilder());
 
         } else if ("curl".equals(inputCommands[0])) {
